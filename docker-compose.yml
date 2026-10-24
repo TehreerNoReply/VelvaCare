@@ -1,0 +1,7 @@
+services:
+  velva:
+    build: .
+    container_name: velva-storefront
+    ports:
+      - "8080:80"
+    restart: unless-stopped
