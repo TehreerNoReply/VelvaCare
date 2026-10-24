@@ -339,6 +339,9 @@ const productList = document.querySelector('#adminProductList');
 const productNotice = document.querySelector('#productNotice');
 const ordersList = document.querySelector('#adminOrders');
 const lowStockList = document.querySelector('#lowStockList');
+const reviewsList = document.querySelector('#adminReviews');
+const productSubmitLabel = document.querySelector('#productSubmitLabel');
+const cancelProductEdit = document.querySelector('#cancelProductEdit');
 let adminProducts = [];
 function adminMessage(text, error = false) {
   if (adminNotice) { adminNotice.textContent = text; adminNotice.className = error ? 'account-notice error' : 'account-notice'; }
@@ -350,22 +353,53 @@ async function isApprovedAdmin(userId) {
 }
 function renderAdminProducts() {
   if (!productList) return;
-  productList.innerHTML = adminProducts.length ? adminProducts.map((p) => '<div class="admin-product-item"><img src="' + escapeHtml(p.image_url) + '" alt=""><span><strong>' + escapeHtml(p.name) + '</strong><small>Rs. ' + escapeHtml(p.price) + ' · ' + escapeHtml(p.average_rating) + ' / 5 · ' + escapeHtml(p.stock_quantity) + ' in stock</small></span><button class="admin-delete-product" type="button" data-id="' + escapeHtml(p.id) + '">Remove</button></div>').join('') : '<p class="text-muted">No products have been added yet.</p>';
+  productList.innerHTML = adminProducts.length ? adminProducts.map((p) => '<div class="admin-product-item"><img src="' + escapeHtml(p.image_url) + '" alt=""><span><strong>' + escapeHtml(p.name) + '</strong><small>Rs. ' + escapeHtml(p.price) + ' · ' + escapeHtml(p.stock_quantity) + ' in stock · ' + (p.is_active ? 'Live' : 'Hidden') + '</small></span><button class="admin-edit-product" type="button" data-id="' + escapeHtml(p.id) + '">Edit</button><button class="admin-delete-product" type="button" data-id="' + escapeHtml(p.id) + '" data-active="' + String(p.is_active) + '">' + (p.is_active ? 'Hide' : 'Publish') + '</button></div>').join('') : '<p class="text-muted">No products have been added yet.</p>';
+  productList.querySelectorAll('.admin-edit-product').forEach((button) => button.addEventListener('click', () => {
+    const product = adminProducts.find((item) => item.id === button.dataset.id);
+    if (!product || !productForm) return;
+    Object.entries({ id: product.id, name: product.name, price: product.price, compare_at_price: product.compare_at_price || '', rating: product.average_rating, stock: product.stock_quantity, image: product.image_url, description: product.description || '' }).forEach(([key, value]) => { const field = productForm.elements.namedItem(key); if (field) field.value = String(value); });
+    const featured = productForm.elements.namedItem('is_featured');
+    if (featured) featured.checked = Boolean(product.is_featured);
+    if (productSubmitLabel) productSubmitLabel.textContent = 'Save changes';
+    if (cancelProductEdit) cancelProductEdit.hidden = false;
+    productForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
   productList.querySelectorAll('.admin-delete-product').forEach((button) => button.addEventListener('click', async () => {
-    const { error } = await supabase.from('velva_products').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', button.dataset.id);
+    const { error } = await supabase.from('velva_products').update({ is_active: button.dataset.active !== 'true', updated_at: new Date().toISOString() }).eq('id', button.dataset.id);
     if (error) return adminMessage('Could not update this product.', true);
+    adminMessage(button.dataset.active === 'true' ? 'Product hidden from storefront.' : 'Product published to storefront.');
+    await loadAdminData();
+  }));
+}
+function renderAdminReviews(reviews) {
+  if (!reviewsList) return;
+  reviewsList.innerHTML = reviews.length ? reviews.map((review) => '<div class="admin-review-item"><div><strong>' + escapeHtml(review.customer_name) + '</strong><small>' + escapeHtml(review.rating) + ' / 5 · ' + (review.is_visible ? 'Visible' : 'Hidden') + '</small><p>' + escapeHtml(review.review_text) + '</p></div><button class="admin-review-toggle" type="button" data-id="' + escapeHtml(review.id) + '" data-visible="' + String(review.is_visible) + '">' + (review.is_visible ? 'Hide' : 'Approve') + '</button><button class="admin-review-delete" type="button" data-id="' + escapeHtml(review.id) + '">Delete</button></div>').join('') : '<p class="text-muted">No reviews yet.</p>';
+  reviewsList.querySelectorAll('.admin-review-toggle').forEach((button) => button.addEventListener('click', async () => {
+    const { error } = await supabase.from('velva_reviews').update({ is_visible: button.dataset.visible !== 'true' }).eq('id', button.dataset.id);
+    if (error) return adminMessage('Could not update this review.', true);
+    await loadAdminData();
+  }));
+  reviewsList.querySelectorAll('.admin-review-delete').forEach((button) => button.addEventListener('click', async () => {
+    const { error } = await supabase.from('velva_reviews').delete().eq('id', button.dataset.id);
+    if (error) return adminMessage('Could not delete this review.', true);
     await loadAdminData();
   }));
 }
 async function loadAdminData() {
-  const [productsResponse, ordersResponse] = await Promise.all([
-    supabase.from('velva_products').select('id,name,price,image_url,stock_quantity,average_rating,is_active').order('created_at', { ascending: false }),
-    supabase.from('velva_orders').select('id,customer_name,created_at,status,total_amount').order('created_at', { ascending: false }).limit(8)
+  const [productsResponse, ordersResponse, reviewsResponse] = await Promise.all([
+    supabase.from('velva_products').select('id,name,description,price,compare_at_price,image_url,stock_quantity,average_rating,is_featured,is_active').order('created_at', { ascending: false }),
+    supabase.from('velva_orders').select('id,customer_name,created_at,status,total_amount').order('created_at', { ascending: false }).limit(8),
+    supabase.from('velva_reviews').select('id,customer_name,rating,review_text,is_visible,created_at').order('created_at', { ascending: false }).limit(20)
   ]);
-  if (productsResponse.error || ordersResponse.error) return adminMessage('Could not load store data.', true);
+  if (productsResponse.error || ordersResponse.error || reviewsResponse.error) return adminMessage('Could not load store data.', true);
   adminProducts = productsResponse.data || [];
   renderAdminProducts();
-  if (ordersList) ordersList.innerHTML = (ordersResponse.data || []).map((order) => '<tr><td>' + escapeHtml(order.id.slice(0, 8)) + '</td><td>' + escapeHtml(order.customer_name) + '</td><td>' + new Date(order.created_at).toLocaleDateString() + '</td><td><span class="status pending">' + escapeHtml(order.status) + '</span></td><td>Rs. ' + escapeHtml(order.total_amount) + '</td></tr>').join('') || '<tr><td colspan="5">No orders yet.</td></tr>';
+  renderAdminReviews(reviewsResponse.data || []);
+  if (ordersList) ordersList.innerHTML = (ordersResponse.data || []).map((order) => '<tr><td>' + escapeHtml(order.id.slice(0, 8)) + '</td><td>' + escapeHtml(order.customer_name) + '</td><td>' + new Date(order.created_at).toLocaleDateString() + '</td><td><select class="order-status-select" data-id="' + escapeHtml(order.id) + '"><option ' + (order.status === 'pending' ? 'selected' : '') + '>pending</option><option ' + (order.status === 'paid' ? 'selected' : '') + '>paid</option><option ' + (order.status === 'shipped' ? 'selected' : '') + '>shipped</option><option ' + (order.status === 'delivered' ? 'selected' : '') + '>delivered</option><option ' + (order.status === 'cancelled' ? 'selected' : '') + '>cancelled</option></select></td><td>Rs. ' + escapeHtml(order.total_amount) + '</td></tr>').join('') || '<tr><td colspan="5">No orders yet.</td></tr>';
+  ordersList?.querySelectorAll('.order-status-select').forEach((select) => select.addEventListener('change', async () => {
+    const { error } = await supabase.from('velva_orders').update({ status: select.value }).eq('id', select.dataset.id);
+    adminMessage(error ? 'Could not update order status.' : 'Order status updated.', Boolean(error));
+  }));
   const lowStock = adminProducts.filter((product) => product.is_active && product.stock_quantity < 10);
   if (lowStockList) lowStockList.innerHTML = lowStock.length ? lowStock.map((product) => '<div class="stock-row"><span><strong>' + escapeHtml(product.name) + '</strong><small>Only ' + escapeHtml(product.stock_quantity) + ' left</small></span></div>').join('') : '<p class="text-muted">All products have healthy stock.</p>';
 }
@@ -396,13 +430,22 @@ document.querySelector('#adminResetButton')?.addEventListener('click', async () 
   adminMessage(error ? 'Password reset could not be started.' : 'If that email is registered, a reset link has been sent.');
 });
 document.querySelector('.admin-signout')?.addEventListener('click', async () => { await supabase.auth.signOut(); window.location.reload(); });
+function resetProductForm() {
+  productForm?.reset();
+  const idField = productForm?.elements.namedItem('id');
+  if (idField) idField.value = '';
+  if (productSubmitLabel) productSubmitLabel.textContent = 'Add product';
+  if (cancelProductEdit) cancelProductEdit.hidden = true;
+}
+cancelProductEdit?.addEventListener('click', resetProductForm);
 productForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = new FormData(productForm);
   const name = String(data.get('name') || '').trim();
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now();
-  const { error } = await supabase.from('velva_products').insert({ name, slug, price: Number(data.get('price')), average_rating: Number(data.get('rating')), stock_quantity: Number(data.get('stock')), image_url: String(data.get('image')), is_active: true });
-  if (error) return adminMessage('Could not save this product. Check the details and try again.', true);
-  productForm.reset(); adminMessage('Product saved.'); await loadAdminData();
+  const id = String(data.get('id') || '');
+  const values = { name, price: Number(data.get('price')), compare_at_price: Number(data.get('compare_at_price')) || null, average_rating: Number(data.get('rating')), stock_quantity: Number(data.get('stock')), image_url: String(data.get('image')), description: String(data.get('description') || ''), is_featured: data.get('is_featured') === 'on', updated_at: new Date().toISOString() };
+  const response = id ? await supabase.from('velva_products').update(values).eq('id', id) : await supabase.from('velva_products').insert({ ...values, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now(), is_active: true });
+  if (response.error) return adminMessage('Could not save this product. Check the details and try again.', true);
+  resetProductForm(); adminMessage(id ? 'Product changes saved.' : 'Product added to the catalog.'); await loadAdminData();
 });
 if (adminGate) openAdmin();
