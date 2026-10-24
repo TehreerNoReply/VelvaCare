@@ -239,17 +239,29 @@ document.querySelectorAll('.product-card').forEach((card, index) => {
 });
 
 /* ── ADD TO BAG ── */
-document.querySelectorAll('.add-button').forEach((btn) => btn.addEventListener('click', () => {
-  const card = btn.closest('.product-card');
-  const name = card?.querySelector('h3')?.textContent || 'Velva product';
-  const price = Number((card?.querySelector('strong')?.textContent || '0').replace(/[^0-9]/g, ''));
-  cartItems.push({ name, price, quantity: 1 });
-  localStorage.setItem('velva-cart-items', JSON.stringify(cartItems));
-  cartCount += 1; localStorage.setItem('velva-cart-count', String(cartCount));
-  if (bagCount) bagCount.textContent = String(cartCount);
-  const orig = btn.textContent; btn.textContent = 'Added to bag'; btn.classList.add('added');
-  window.setTimeout(() => { btn.textContent = orig; btn.classList.remove('added'); }, 1400);
-}));
+function bindAddButtons() {
+  document.querySelectorAll('.add-button').forEach((btn) => btn.addEventListener('click', () => {
+    const card = btn.closest('.product-card');
+    const name = card?.querySelector('h3')?.textContent || 'Velva product';
+    const price = Number((card?.querySelector('strong')?.textContent || '0').replace(/[^0-9]/g, ''));
+    cartItems.push({ name, price, quantity: 1 });
+    localStorage.setItem('velva-cart-items', JSON.stringify(cartItems));
+    cartCount += 1; localStorage.setItem('velva-cart-count', String(cartCount));
+    if (bagCount) bagCount.textContent = String(cartCount);
+    const orig = btn.textContent; btn.textContent = 'Added to bag'; btn.classList.add('added');
+    window.setTimeout(() => { btn.textContent = orig; btn.classList.remove('added'); }, 1400);
+  }));
+}
+bindAddButtons();
+async function loadPublishedProducts() {
+  const grid = document.querySelector('.product-grid');
+  if (!grid) return;
+  const { data, error } = await supabase.from('velva_products').select('name,price,image_url,stock_quantity,average_rating').eq('is_active', true).order('created_at', { ascending: false });
+  if (error || !data?.length) return;
+  grid.innerHTML = data.map((product) => '<article class="col-sm-6 col-lg-3"><div class="product-card"><div class="product-photo sage"><img src="' + escapeHtml(product.image_url) + '" alt="' + escapeHtml(product.name) + '"></div><div class="product-meta"><div class="product-rating"><span class="rating-stars">★★★★★</span><small>' + escapeHtml(product.average_rating) + ' / 5</small></div><h3>' + escapeHtml(product.name) + '</h3><p>' + (product.stock_quantity > 0 ? 'In stock' : 'Out of stock') + '</p><strong>Rs. ' + escapeHtml(product.price) + '</strong><button class="add-button" type="button"' + (product.stock_quantity < 1 ? ' disabled' : '') + '>' + (product.stock_quantity > 0 ? 'Add to bag' : 'Out of stock') + '</button></div></div></article>').join('');
+  bindAddButtons();
+}
+loadPublishedProducts();
 
 /* ── PLACE ORDER ── */
 async function placeOrder() {
